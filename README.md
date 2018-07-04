@@ -1,32 +1,88 @@
 # P2P live streaming system
 
+### Motive
 
-- WebM Format Structure
+Live streaming is one of the most indispensable technologies in our lives today.
+Recently, the genre of Vtuber has been established, and because I like to watch its live streaming, even a little I wanted to create a core system that would alleviate the service.
 
-WebM Structure | Discription
---- | ---
-*Header* | EBML<br>Segment<br>├─Void<br>├─Info<br>├─Tracks
-*Cluster* | Assembled SimpleBlock
-*SimpleBlock* | Movie Data Body<br>
+### Overview
 
-- Cluster Structure
+It is a live streaming system using a P2P method that reduces the intensive burden on the server,
+It is intended for raw delivery in the WEBM format, which is compressed in VP9.
 
-Cluster Format | Contents
---- | ---
-*Cluster Header* | `0x1f 0x43 0xb6 0x75 0x01 0xXX 0xXX 0xXX 0xXX 0xXX 0xXX 0xXX`
-*Data* | `0xXX ... ... ... ...`
-*Footer* | `0x1f 0x43 0xb6 0x75 0x01 0xff 0xff 0xff 0xff 0xff 0xff 0xff`
+Specifically, by using P2P networks, we use the resources of peers to mitigate scalability problems.
+In addition, we determine the compatibility between peers from the amount of cache and route them to ensure that the quality of service is maintained for the nodes.
 
-***\*Cluster Header (including bytes to indicate the total data )***
+### Characteristics
+
+- Supports the delivery of the VP9-compressed WEBM format, which is often used in the near future.
+- UDP communication.
+- Structure a P2P network based on live streaming cache.
+
+### Compile
+
+- on the originsource side
+
+```sh
+
+cd src/originsource
+make
+
+```
+
+- on the peer side
+
+```sh
+
+cd src/peer
+make
+
+```
+
+### Usage
+
+***To encode with VP9, it is necessary to install the encoding software such as FFmpeg.***
 
 
-### Reference
+- How to start on the originsource side
+
+```sh
+
+>$ program <gateway-ip-address> <file name>
+
+```
+
+- Using FFmpeg
+
+```sh
+
+ffmpeg -threads 8 -i /dev/video0 -c:v libvpx -g 25 -cpu-used 8 <file-name>
+
+```
+
+- How to start on the peer side
+
+```sh
+
+>$ program < gateway-ip-address > <originsource-global-ip-address> <src-port> < file-name >
+
+```
+
+
+
+画像を貼る
+
+### Example
+TODO
+
+***To encode with VP9, it is necessary to install the encoding software such as FFmpeg.***
+
+
+### License
+Mit license.
+
+### References
 ***
 
-* [UPnP](http://hp.vector.co.jp/authors/VA011804/upnp.htm#UPNP_020)
-* [Description:SSDP](http://d.hatena.ne.jp/ozakira/20141130)
-* [Usage:UPnP](http://d.hatena.ne.jp/yogit/20101006/1286380061)
-* [Implementation:torrent](https://www.gitbook.com/book/kyorohiro/doc_hetimatorrent/details)
+* [Encode vp9 by using FFmpeg](https://trac.ffmpeg.org/wiki/Encode/VP9)
 * [Matroska Specifications](https://www.matroska.org/technical/specs/index.html)
-* [Writing Samples for Structure](http://docs.ros.org/diamondback/api/artoolkit/html/structARParam.html)
-* [Markdown Cheat Sheet for Github](https://github.com/adam-p/markdown-here/wiki/Markdown-Cheatsheet)
