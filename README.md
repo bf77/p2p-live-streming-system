@@ -70,12 +70,9 @@ ffmpeg -threads 8 -i /dev/video0 -c:v libvpx -g 25 -cpu-used 8 <file-name>
 
 
 
-画像を貼る
-
 ### Example
 TODO
 
-***To encode with VP9, it is necessary to install the encoding software such as FFmpeg.***
 
 
 ### License
