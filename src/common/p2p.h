@@ -82,7 +82,7 @@
 #define PARENT_ID 2
 #define TMP_ID 3
 #define MY_ID 3 //For NODES_STATUS
-#define NODE_STATUS_BYTES 26
+#define NODE_STATUS_BYTES 30
 #define MAX_LIST_NUM 50
 #define ORIGIN_ID 0
 
@@ -175,14 +175,14 @@ struct NodeStatus{
   u8 status;//piece or block or simple block 
   u8 layer;//attribute
   
-  //8bytes
+  //12bytes
   u16 id;//Limit 65565 Node
   u32 ipaddr;
+  u32 p_ipaddr;
   u16 port;
 
-  //6bytes
+  //2bytes
   u16 padding16;
-  u32 padding32;
 
   //16bytes
   struct timeval timestamp;
@@ -326,6 +326,7 @@ void RenewDstIPandMAC( const char *ip_str , const u16 port , const u8 *dst_mac ,
 int GenerateRndID( const int init_val , const int range );
 
 //Send
+u32 GtoPIP( struct NodeStatus nd_status );
 void SendPacket( const u8 *data , const u16 data_bytes , const int dst_id );
 void SendSetup();
 void SendWebMHeader( const int dst_id );

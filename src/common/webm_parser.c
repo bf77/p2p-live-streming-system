@@ -33,7 +33,8 @@ u64 TOTAL_BLOCK_NUM = 0;
 
 int IS_FIRST_CLUSTER = 1;
 
-u64 NODE_TIMECODE_OFFSSET = 0;
+u64 NODE_TIMECODE_OFFSET = 0;
+u64 TIMECODE_OFFSET = 0;
 
 /*
 *----------------------------------------------------------------------------
@@ -1340,12 +1341,17 @@ void ChangeTimecode( u8 *data ){
     int k;
     if( !IS_GET_TIMECODE_OFFSET ){
 
-      TIMECODE_OFFSET = timestamp;
+      TIMECODE_OFFSET = timestamp + NODE_TIMECODE_OFFSET;
       IS_GET_TIMECODE_OFFSET = 1;
      
     }
 
-    u64 modified_timestamp = timestamp + NODE_TIMECODE_OFFSSET - TIMECODE_OFFSET;
+    printf("Relative Timestamp %"PRIx64"\n",timestamp);
+    printf("Node Timestamp Offset %"PRIx64"\n",NODE_TIMECODE_OFFSET);
+    printf("Absolute Timestamp %"PRIx64"\n",NODE_TIMECODE_OFFSET+timestamp);
+    printf("Timecode Offset %"PRIx64"\n",TIMECODE_OFFSET);
+    
+    u64 modified_timestamp = timestamp + NODE_TIMECODE_OFFSET - TIMECODE_OFFSET;
 
     printf("Modified Timestamp %"PRIx64"\n",modified_timestamp);
 

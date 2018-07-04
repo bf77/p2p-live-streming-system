@@ -983,17 +983,24 @@ void SendSetup(){
   //Protocol for setting
   datahdr->protocol = SETUP_PROTO;
 
+  u32 p_ipaddr = htonl(NODES_STATUS[MY_ID].p_ipaddr); 
+    memcpy( &data[data_header_bytes] , (u8 *)&p_ipaddr , 4 );
+
   //Parent is not Host
   if( NODES_STATUS[MY_ID].id > 0 ){
 
     u16 id = htons(NODES_STATUS[MY_ID].id); 
-    memcpy( &data[data_header_bytes] , (u8 *)&id , 2 );
-    data_bytes = data_header_bytes + 2;
+    memcpy( &data[data_header_bytes+4] , (u8 *)&id , 2 );
+
+    u32 g_ipaddr = htonl(NODES_STATUS[MY_ID].ipaddr); 
+    memcpy( &data[data_header_bytes+6] , (u8 *)&g_ipaddr , 4 );
+
+    data_bytes = data_header_bytes + 10;
 
   }//Parent is Host
   else{
 
-    data_bytes = data_header_bytes;  
+    data_bytes = data_header_bytes + 4;  
 
   }
 
@@ -1050,8 +1057,7 @@ void NodeSetup( u8 *data , const u16 data_bytes , const u32 ipaddr , u16 port ){
 
     printf("Advertising...\n");
     RenewDstIPandMAC( node_ip_str , node_port , GATEWAY_MAC , TMP_ID );
-    SendAdvertise( TMP_ID , rnd_child_id );
-    
+    SendAdvertise( TMP_ID , rnd_child_id );    
     return;
 
   }
@@ -1074,10 +1080,10 @@ void NodeSetup( u8 *data , const u16 data_bytes , const u32 ipaddr , u16 port ){
 
   //To join is successful
   if( child_id != -1 ){
-      
+
     //Update  information to connect the child
     RenewDstIPandMAC( node_ip_str , node_port , GATEWAY_MAC , child_id );
-
+    
     //--Update Nodes Status and Renew Current child Block--
     CURRENT_CHILD_BLOCK[child_id]->info.cluster_seq = CURRENT_CLUSTER->prev->seq;
     RenewBlock( CURRENT_CHILD_BLOCK[child_id] );
@@ -1086,24 +1092,35 @@ void NodeSetup( u8 *data , const u16 data_bytes , const u32 ipaddr , u16 port ){
     //Copy the previous block
     memcpy( (u8 *)&(NODES_STATUS[child_id]), (u8 *)&(CURRENT_CHILD_BLOCK[child_id]->prev->info) , BLOCKINFO_BYTES );    
     NODES_STATUS[child_id].layer = NODES_STATUS[MY_ID].layer + 1;
-    NODES_STATUS[child_id].ipaddr = ntohl(ipaddr);
+    
     NODES_STATUS[child_id].port = node_port;
 
-    //Host ID
+    u32 p_ipaddr = 0;
+    memcpy( (u8 *)&p_ipaddr , data , 4 );
+    NODES_STATUS[child_id].p_ipaddr = ntohl(p_ipaddr);
+    
+    //Origin Source ID
     if( NODES_STATUS[MY_ID].id == 0 ){
+      
       NODES_STATUS[child_id].id = CURRENT_NODE_ID;
+      NODES_STATUS[child_id].ipaddr = ntohl(ipaddr);
+      
     }//Node ID
     else{
       
       u16 id = 0;
-      memcpy( (u8 *)&id , data , 2 );
+      memcpy( (u8 *)&id , &data[4] , 2 );
       NODES_STATUS[child_id].id = ntohs(id);
-
+      
+      u32 g_ipaddr = 0;
+      memcpy( (u8 *)&g_ipaddr , &data[6] , 4 );
+      NODES_STATUS[child_id].ipaddr = ntohl(g_ipaddr);
+      
     }
-
+    
     SendInitialStatus( child_id );
     SendWebMHeader( child_id );
-
+    
     //Time
     UpdateTimestamp(&NODES_STATUS[child_id].timestamp);
 
@@ -1159,9 +1176,13 @@ void SendID( const u32 ipaddr , const u16 port ){
   //Storing data
   u16 id = htons(CURRENT_NODE_ID);
   memcpy( &data[data_header_bytes] , (u8 *)&id , sizeof(u16) );
+
+  //Storing data
+  u32 w_ipaddr = ipaddr;
+  memcpy( &data[data_header_bytes+2] , (u8 *)&w_ipaddr , sizeof(u32) );
   
   //Total data bytes
-  data_bytes = data_header_bytes + sizeof(u16);
+  data_bytes = data_header_bytes + sizeof(u16) + sizeof(u32);
 
   SendPacket( data , data_bytes , TMP_ID );
   printf("\n------SendID() end------\n\n");
@@ -1171,10 +1192,17 @@ void SendID( const u32 ipaddr , const u16 port ){
 void NodeID( u8 *data ){
 
   printf("\n------NodeID()------\n\n");
-  
+
+  //id
   memcpy( (u8 *)&(NODES_STATUS[MY_ID].id) , data , sizeof(u16) );
   NODES_STATUS[MY_ID].id = ntohs(NODES_STATUS[MY_ID].id);
+
+  //global ipaddr
+  memcpy( (u8 *)&(NODES_STATUS[MY_ID].ipaddr) , &data[2], sizeof(u32) );
+  NODES_STATUS[MY_ID].ipaddr = ntohl(NODES_STATUS[MY_ID].ipaddr);
+
   printf("NODE MY_ID id%d",NODES_STATUS[MY_ID].id);
+  printf(" IP%"PRIx32"\n",NODES_STATUS[MY_ID].ipaddr);
 
   printf("\n------NodeID() end------\n\n");
 
@@ -1199,33 +1227,39 @@ void SendInitialStatus( const int dst_id ){
   //Protocol for setting
   datahdr->protocol = INITIAL_STATUS_PROTO;
   
+  int i;
+  for( i=0 ; i<8 ; i++ ){
+    data[ data_header_bytes + i ] = (TIMECODE_OFFSET >> 8*i) & 0xff;
+  }
+
+  printf("Timecode Offset:%"PRIx64"\n",TIMECODE_OFFSET);
+
   int status_num;
   int current_status_num = 0;
 
   if( (CONNECTED_NODES >> PARENT_ID) & 0x01 ){
     
-    //Including my parent 
-    status_num = CURRENT_CHILD_NUM + 1 + 1;
+    //Including my parent            my new  par
+    status_num = CURRENT_CHILD_NUM + 1 + 1 + 1;
 
   }else{
-    
-    status_num = CURRENT_CHILD_NUM + 1;
+    //                              my   new       
+    status_num = CURRENT_CHILD_NUM + 1 + 1;
 
   }
 
   //New child status
   printf("New Child Node Status\n");
-  CopyNodeStatusToBytes( &data[data_header_bytes+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[dst_id] );
+  CopyNodeStatusToBytes( &data[data_header_bytes+8+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[dst_id] );
   current_status_num++;
   PrintNodeStatus( NODES_STATUS[dst_id] );
 
   //My status
   printf("My Status\n");
-  CopyNodeStatusToBytes( &data[data_header_bytes+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[MY_ID] );
+  CopyNodeStatusToBytes( &data[data_header_bytes+8+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[MY_ID] );
   current_status_num++;
   PrintNodeStatus( NODES_STATUS[MY_ID] );
 
-  int i;
   //Except for my status
   for( i=0 ; i<(MAX_NODE_NUM-1) ; i++ ){
     
@@ -1235,14 +1269,14 @@ void SendInitialStatus( const int dst_id ){
 
     if( (CONNECTED_NODES >> i) & 0x01 ){
 
-      CopyNodeStatusToBytes( &data[data_header_bytes+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[i] );
+      CopyNodeStatusToBytes( &data[data_header_bytes+8+NODE_STATUS_BYTES*current_status_num] , NODES_STATUS[i] );
       current_status_num++;
 
     }
 
   }
 
-  data_bytes = data_header_bytes + (NODE_STATUS_BYTES * status_num);
+  data_bytes = data_header_bytes + (NODE_STATUS_BYTES * status_num) + 8;
   SendPacket( data , data_bytes , dst_id );
   printf("\n------SendInitialStatus() end------\n\n");
 
@@ -1252,15 +1286,23 @@ void NodeInitialStatus( u8 *data , const u16 data_bytes ){
 
   printf("\n------NodeInitialStatus()------\n\n");
 
+  int i;
+  for( i=0 ; i<8 ; i++ ){
+    NODE_TIMECODE_OFFSET += (data[i]) << 8*i;
+  }
+
+  printf("Node Timecode offset %"PRIx64"\n",NODE_TIMECODE_OFFSET);
+
   //    0     |      1      |      2     | ... |    X
   //my_status->parent_status->node_status->...->node_status
 
-  int status_num = data_bytes / NODE_STATUS_BYTES;
+  int status_num = (data_bytes - 8) / NODE_STATUS_BYTES;
   int list_num = status_num - 2;
-  int i;
+
+  printf("status num %d \n",status_num);
 
   //My status (Not overwrite NODES_STATUS[MY_ID].id)
-  CopyBytesToNodeStatus( (&NODES_STATUS[MY_ID]) , data );
+  CopyBytesToNodeStatus( (&NODES_STATUS[MY_ID]) , &data[8] );
   
   //--Iniitializing
 
@@ -1282,7 +1324,7 @@ void NodeInitialStatus( u8 *data , const u16 data_bytes ){
   PrintNodeStatus( NODES_STATUS[MY_ID] );
 
   //Parent status
-  CopyBytesToNodeStatus( &(NODES_STATUS[PARENT_ID]) , &data[ NODE_STATUS_BYTES ] );
+  CopyBytesToNodeStatus( &(NODES_STATUS[PARENT_ID]) , &data[ NODE_STATUS_BYTES + 8 ] );
   printf("Parent Status\n");
   PrintNodeStatus( NODES_STATUS[PARENT_ID] );
 
@@ -1296,7 +1338,7 @@ void NodeInitialStatus( u8 *data , const u16 data_bytes ){
   //Storing List 
   for( i=0 ; i<list_num ; i++ ){
 
-    CopyBytesToNodeStatus( &current_node_status , &data[ NODE_STATUS_BYTES * (2+i) ] );
+    CopyBytesToNodeStatus( &current_node_status , &data[ NODE_STATUS_BYTES * (2+i) + 8 ] );
     
     //Check NODES_LIST contains
     if( IsListContains( current_node_status.id ) ){
@@ -1384,6 +1426,24 @@ void SendAdvertise( const int dst_id , const int ad_id ){
 
 }
 
+u32 GtoPIP( struct NodeStatus nd_status ){
+
+  u32 ret;
+
+  if( NODES_STATUS[MY_ID].ipaddr == nd_status.ipaddr ){
+
+    ret = nd_status.p_ipaddr;
+    
+  }else{
+
+    ret = nd_status.ipaddr;
+
+  }
+
+  return ret;
+
+}
+
 void NodeAdvertise( u8 *data , const u16 data_bytes ){
 
   printf("\n------NodeAdvertise()------\n\n");
@@ -1422,7 +1482,8 @@ void NodeAdvertise( u8 *data , const u16 data_bytes ){
   
   //Retry Setup
   u16 node_port = ad_node_status.port;
-  u32 ipaddr_n = htonl(ad_node_status.ipaddr);
+  u32 ipaddr_n = htonl(GtoPIP(ad_node_status));
+  
   char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr_n) );
   RenewDstIPandMAC( node_ip_str , node_port , GATEWAY_MAC , PARENT_ID );
 
@@ -1536,6 +1597,9 @@ void NodeConnect( u8 *data ){
     NODES_STATUS[child_id].layer = NODES_STATUS[MY_ID].layer + 1;
     
     SendAccept( child_id );
+
+    //Time
+    UpdateTimestamp(&NODES_STATUS[child_id].timestamp);
     
     //Child Process
     CONNECTED_NODES += (0x01 << child_id);
@@ -1602,7 +1666,7 @@ void NodeDepart( u8 *data ){
   printf("Depart ID %u\n",depart_id);
 
   u16 node_port = depart_node_status.port;
-  u32 ipaddr_n = htonl(depart_node_status.ipaddr);
+  u32 ipaddr_n = htonl(GtoPIP(depart_node_status));
   char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr_n) );
   u16 cluster_seq;
   
@@ -1683,7 +1747,7 @@ void NodeDetach( u8 *data ){
   CONNECTED_NODES -= 0x01 << PARENT_ID;
   UpdateTimestamp( &DEPART_TIMESTAMP );
   InitNodeStatus( NODES_STATUS[PARENT_ID] );
-  //NODES_STATUS[MY_ID].cluster_seq = cluster_seq;
+  NODES_STATUS[MY_ID].cluster_seq = cluster_seq;
 
   struct NodeList *prior_node = GetPriorList(NODES_LIST);
 
@@ -1703,11 +1767,13 @@ void NodeDetach( u8 *data ){
   }
 
   u16 node_port = prior_node->status.port;
-  u32 ipaddr_n = htonl(prior_node->status.ipaddr);
+  u32 ipaddr_n = htonl(GtoPIP(prior_node->status));
   char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr_n) );
 
   //Built Retry Flag
-  IS_RETRY = 1;
+  //IS_RETRY = 1;
+  //PLAYED_BUFFER = 0;
+  //BUFFER_DT_SEC = 0;
   UpdateTimestamp( &RETRY_TIMESTAMP );
   NODES_STATUS[PARENT_ID].id = prior_node->status.id;
 
@@ -1747,6 +1813,8 @@ void SendAccept( const int dst_id ){
     data[ data_header_bytes + NODE_STATUS_BYTES + i ] = (TIMECODE_OFFSET >> 8*i) & 0xff;
   }
 
+  printf("Timecode Offset:%"PRIx64"\n",TIMECODE_OFFSET);
+
   data_bytes = data_header_bytes + NODE_STATUS_BYTES + 8;  
   SendPacket( data , data_bytes , dst_id  );
 
@@ -1770,11 +1838,12 @@ void NodeAccept( u8 *data ){
   PrintNodeStatus( NODES_STATUS[PARENT_ID] );
 
   int i;
+  NODE_TIMECODE_OFFSET = 0;
   for( i=0 ; i<8 ; i++ ){
     NODE_TIMECODE_OFFSET += (data[ NODE_STATUS_BYTES + i ]) << 8*i;
   }
 
-  printf("Node Timecode offset"PRIx64"\n",NODE_TIMECODE_OFFSET);
+  printf("Node Timecode offset %"PRIx64"\n",NODE_TIMECODE_OFFSET);
 
   //layer
   NODES_STATUS[MY_ID].layer = NODES_STATUS[PARENT_ID].layer + 1;
@@ -1861,7 +1930,7 @@ void NodeUnaccept( u8 *data ){
   }
 
   u16 node_port = prior_node->status.port;
-  u32 ipaddr_n = htonl(prior_node->status.ipaddr);
+  u32 ipaddr_n = htonl(GtoPIP(prior_node->status));
   char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr_n) );
 
   RenewDstIPandMAC( node_ip_str , node_port , GATEWAY_MAC , TMP_ID );
@@ -2210,8 +2279,10 @@ void NodeRetry(){
   }
 
   u16 node_port = prior_node->status.port;
-  u32 ipaddr_n = htonl(prior_node->status.ipaddr);
+  u32 ipaddr_n = htonl(GtoPIP(prior_node->status));
   char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr_n) );
+
+  NODES_STATUS[MY_ID].cluster_seq = CURRENT_CLUSTER->seq;
 
   RenewDstIPandMAC( node_ip_str , node_port , GATEWAY_MAC , TMP_ID );
   SendConnect( TMP_ID );
@@ -2269,9 +2340,13 @@ void CopyNodeStatusToBytes( u8 *data , struct NodeStatus node_status ){
   //ipaddr
   u32 ipaddr = htonl(node_status.ipaddr);
   memcpy( &data[BLOCKINFO_BYTES + 2] , (u8 *)(&ipaddr) , sizeof(u32) );
+
+  //private ipaddr
+  u32 p_ipaddr = htonl(node_status.p_ipaddr);
+  memcpy( &data[BLOCKINFO_BYTES + 6] , (u8 *)(&p_ipaddr) , sizeof(u32) );
   
   u16 port = htons(node_status.port);
-  memcpy( &data[BLOCKINFO_BYTES + 6] , (u8 *)(&port) , sizeof(u16) );
+  memcpy( &data[BLOCKINFO_BYTES + 10] , (u8 *)(&port) , sizeof(u16) );
 
 }
 
@@ -2289,8 +2364,13 @@ void CopyBytesToNodeStatus( struct NodeStatus *node_status , u8 *data ){
   memcpy( (u8 *)(&ipaddr) , &data[BLOCKINFO_BYTES+2] , sizeof(u32) );
   node_status->ipaddr = ntohl(ipaddr);
 
+  //private ipaddr
+  u32 p_ipaddr = 0;
+  memcpy( (u8 *)(&p_ipaddr) , &data[BLOCKINFO_BYTES+6] , sizeof(u32) );
+  node_status->p_ipaddr = ntohl(p_ipaddr);
+
   u16 port = 0;
-  memcpy( (u8 *)(&port) , &data[BLOCKINFO_BYTES+6] , sizeof(u16) );
+  memcpy( (u8 *)(&port) , &data[BLOCKINFO_BYTES+10] , sizeof(u16) );
   node_status->port = ntohs(port);
 
 }
@@ -2303,6 +2383,7 @@ void PrintNodeStatus( const struct NodeStatus node_status ){
 
   printf("Node Status id: %u\n",node_status.id);
   printf("Node Status ip: %"PRIx32"\n",node_status.ipaddr);
+  printf("Node Status private ip: %"PRIx32"\n",node_status.p_ipaddr);
   printf("Node Status port: %"PRIu16"\n",node_status.port);
 
   printf("------NodeStatus end------\n\n");
@@ -2557,14 +2638,19 @@ void TimeProcess(){
 	int list_num = ListSize( NODES_LIST );
 	int i;
 
+	struct NodeList *nd_list = NODES_LIST;
+
 	//My List
 	for( i=0 ; i<list_num ; i++ ){
 
-	  u16 port = NODES_LIST->status.port;
-	  u32 ipaddr = NODES_LIST->status.ipaddr;
+	  u16 port = nd_list->status.port;
+	  u32 ipaddr = htonl(GtoPIP(nd_list->status));
 	  char *node_ip_str = inet_ntoa( *((struct in_addr *)&ipaddr) );
 	  RenewDstIPandMAC( node_ip_str , port , GATEWAY_MAC , TMP_ID );
 	  SendReqList( TMP_ID );
+
+	  //update
+	  nd_list = nd_list->next;
 
 	}
 
